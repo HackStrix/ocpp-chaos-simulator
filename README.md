@@ -51,8 +51,8 @@ This simulator helps you:
 
 ## 🛠 Technology Stack
 
-- **Backend & Core Engine**: TBD for high-performance, concurrent simulations.
-- **Frontend (UI)**: React / Vue.js for a dynamic and responsive web dashboard.
+- **Backend & Core Engine**: [GoLang](https://go.dev/) for high-performance, concurrent simulations.
+- **Frontend (UI)**: React / Vue.js (Subject to change) for a dynamic and responsive web dashboard.
 - **Communication**: WebSockets for both OCPP messaging and real-time UI updates.
 - **Scenario Definition**: YAML for human-readable test case creation.
 - **Deployment**: Docker & Docker Compose for easy, one-command setup.
