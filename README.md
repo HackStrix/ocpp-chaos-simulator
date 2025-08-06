@@ -1,6 +1,6 @@
 # OCPP Chaos Simulator: A Chaos Monkey for EV Charging Networks
 
-**OCPP Chaos Simulator** is a powerful test suite for validating the robustness and scalability of EV Charging Station Management Systems (CSMS). Inspired by Netflix's Chaos Monkey, this tool goes beyond standard compliance checks to deliberately inject failure into your testing environment.
+**OCPP Chaos Simulator** is a powerful test suite for validating the robustness and scalability of EV Charging Station Management Systems (CSMS). Inspired by Chaos Engineering and Netflix Chaos Monkey, this tool goes beyond standard compliance checks to deliberately inject failure into your testing environment.
 
 It allows you to simulate hundreds of chargers, run complex scenarios, and introduce real-world problems like network loss, corrupted data, and out-of-order messages—all from a user-friendly web interface.
 
