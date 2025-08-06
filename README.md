@@ -52,6 +52,7 @@ This simulator helps you:
 ## 🛠 Technology Stack
 
 - **Backend & Core Engine**: [GoLang](https://go.dev/) for high-performance, concurrent simulations.
+- **Persistant State**: SQLite (Will be eventually migrated into something powerful like postgres while scaling)
 - **Frontend (UI)**: React / Vue.js (Subject to change) for a dynamic and responsive web dashboard.
 - **Communication**: WebSockets for both OCPP messaging and real-time UI updates.
 - **Scenario Definition**: YAML for human-readable test case creation.
