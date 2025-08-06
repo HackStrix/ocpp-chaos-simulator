@@ -1,13 +1,12 @@
 
 
-## Contributor License Agreement
+# Contributor License Agreement
 Thank you for your interest in contributing to the OCPP Chaos Simulator (the "Project"). In order to clarify the intellectual property license granted with Contributions from any person or entity, the Project must have a Contributor License Agreement ("CLA") on file that has been signed by each Contributor, indicating agreement to the license terms below. This license is for your protection as a Contributor as well as the protection of the Project and its users; it does not change your rights to use your own Contributions for any other purpose.
 
 You accept and agree to the following terms and conditions for Your present and future Contributions submitted to the Project. Except for the license granted herein, You reserve all right, title, and interest in and to Your Contributions.
 
 1. Definitions.
 "You" (or "Your") shall mean the copyright owner or legal entity authorized by the copyright owner that is making this Agreement. For legal entities, the entity making a Contribution and all other entities that control, are controlled by, or are under common control with that entity are considered to be a single Contributor.
-
 "Contribution" shall mean any original work of authorship, including any modifications or additions to an existing work, that is intentionally submitted by You to the Project for inclusion in, or documentation of, any of the products owned or managed by the Project (the "Work"). For the purposes of this definition, "submitted" means any form of electronic, verbal, or written communication sent to the Project or its representatives, including but not limited to communication on electronic mailing lists, source code control systems, and issue tracking systems that are managed by, or on behalf of, the Project for the purpose of discussing and improving the Work.
 
 2. Grant of Copyright License.
@@ -24,7 +23,7 @@ You represent that each of Your Contributions is Your original creation. You rep
 5. No Obligation to Support.
 You are not expected to provide support for Your Contributions, except to the extent You desire to provide support. You may provide support for free, for a fee, or not at all. Unless required by applicable law or agreed to in writing, You provide Your Contributions on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied, including, without limitation, any warranties or conditions of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A PARTICULAR PURPOSE.
 
-
+# How to Contribute? 
 When contributing to this repository, please first discuss the change you wish to make via issue, email, or any other method with the owners of this repository before making a change.
 
 ### Standards
