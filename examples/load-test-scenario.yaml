@@ -1,0 +1,135 @@
+# OCPP Load Testing Scenario
+name: "High Load Concurrent Charging"
+description: "Tests CSMS performance under heavy concurrent load"
+version: "1.0"
+duration: 600 # 10 minutes
+tags: ["load", "performance", "stress"]
+
+chargers:
+  count: 500
+  template:
+    model: "FastCharger"
+    vendor: "LoadTest"
+    connectors: 2
+    ocpp_version: "1.6"
+
+csms:
+  endpoint: "ws://localhost:8080/ocpp"
+
+# Load Testing Configuration
+load_profile:
+  ramp_up:
+    chargers_per_second: 10
+    total_duration: 50 # 50 seconds to start all 500
+  
+  steady_state:
+    duration: 400 # 400 seconds of steady load
+    
+  ramp_down:
+    chargers_per_second: 20
+    total_duration: 25
+
+timeline:
+  # Gradual ramp-up
+  - at: 0
+    action: "start_ramp_up"
+    params:
+      total_chargers: 500
+      rate: 10 # chargers per second
+      stagger_boot: true
+      
+  # Each charger follows this flow when created
+  - action: "charger_flow_template"
+    flow:
+      - delay: "random(1,5)" # Stagger connections
+      - send: "BootNotification"
+        wait_for: "BootNotificationResponse"
+        timeout: 30
+        
+      - send: "StatusNotification"
+        params:
+          connector_id: 0
+          status: "Available"
+          
+      # Random charging behavior
+      - repeat:
+          count: "random(5,15)" # Each charger does 5-15 transactions
+          interval: "random(30,120)" # Wait 30-120s between transactions
+        action: "charging_session"
+        flow:
+          - send: "StartTransaction"
+            params:
+              connector_id: "random(1,2)"
+              id_tag: "random_user_id"
+              meter_start: "random(1000,5000)"
+              
+          - send: "StatusNotification"
+            params:
+              connector_id: "same_as_transaction"
+              status: "Charging"
+              
+          # Charging duration varies
+          - repeat:
+              count: "random(10,50)"
+              interval: 6 # Every 6 seconds
+            send: "MeterValues"
+            params:
+              connector_id: "same_as_transaction"
+              
+          - delay: "random(60,300)" # Charge for 1-5 minutes
+          
+          - send: "StopTransaction"
+            params:
+              meter_stop: "calculated_from_duration"
+              transaction_id: "from_start_response"
+              
+          - send: "StatusNotification"
+            params:
+              connector_id: "same_as_transaction"
+              status: "Available"
+
+  # Monitor performance throughout
+  - at: 60
+    action: "start_monitoring"
+    metrics:
+      - connection_count
+      - messages_per_second
+      - response_time_percentiles
+      - memory_usage
+      - cpu_usage
+      - error_rate
+
+  # Inject some chaos during peak load
+  - at: 300
+    action: "inject_light_chaos"
+    strategy: "random_disconnects"
+    targets:
+      count: 50 # 10% of chargers
+    params:
+      disconnect_duration: "random(5,30)"
+      
+# Performance Expectations
+expectations:
+  performance:
+    max_response_time: 5000 # 5 seconds
+    max_memory_usage: "2GB"
+    min_success_rate: 99.5
+    max_concurrent_connections: 500
+    
+  csms_should:
+    - maintain_performance_under_load: true
+    - handle_connection_spikes: true
+    - not_lose_transactions: true
+
+# Results and Analysis
+results:
+  format: ["json", "csv", "performance_report"]
+  metrics:
+    - timeline: "second_by_second_stats"
+    - aggregated: "summary_statistics"
+    - percentiles: [50, 90, 95, 99]
+  include:
+    - connection_timeline
+    - message_throughput
+    - error_breakdown
+    - resource_usage

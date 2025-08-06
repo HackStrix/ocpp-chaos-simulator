@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  simulator:
+    build:
+      context: ..
+      dockerfile: deployments/Dockerfile
+    ports:
+      - "8080:8080"
+    volumes:
+      - simulator_data:/root/data
+      - ../configs:/root/configs:ro
+    environment:
+      - LOG_LEVEL=info
+      - DATABASE_PATH=/root/data/simulator.db
+    restart: unless-stopped
+
+volumes:
+  simulator_data:

@@ -1,0 +1,102 @@
+# Simple OCPP Basic Charge Cycle Test
+name: "Basic Charge Cycle"
+description: "Standard charging session from start to finish"
+version: "1.0"
+duration: 180 # 3 minutes
+tags: ["basic", "charging", "transaction"]
+
+chargers:
+  count: 5
+  template:
+    model: "BasicCharger"
+    vendor: "TestCorp"
+    connectors: 1
+    ocpp_version: "1.6"
+
+csms:
+  endpoint: "ws://localhost:8080/ocpp"
+
+timeline:
+  - at: 0
+    action: "create_chargers"
+    params:
+      count: 5
+      prefix: "BASIC"
+
+  - at: 5
+    action: "start_flow"
+    targets: "all"
+    flow:
+      # Boot sequence
+      - send: "BootNotification"
+        params:
+          charge_point_model: "BasicCharger"
+          charge_point_vendor: "TestCorp"
+        wait_for: "BootNotificationResponse"
+        expect:
+          status: "Accepted"
+          
+      # Initial status
+      - send: "StatusNotification"
+        params:
+          connector_id: 0
+          status: "Available"
+          error_code: "NoError"
+          
+      # Start charging transaction
+      - delay: 10
+      - send: "StartTransaction"
+        params:
+          connector_id: 1
+          id_tag: "USER123"
+          meter_start: 1000
+        wait_for: "StartTransactionResponse"
+        expect:
+          id_tag_info:
+            status: "Accepted"
+            
+      # Update status to charging
+      - send: "StatusNotification"
+        params:
+          connector_id: 1
+          status: "Charging"
+          error_code: "NoError"
+          
+      # Send meter values during charging
+      - repeat:
+          count: 10
+          interval: 5
+        send: "MeterValues"
+        params:
+          connector_id: 1
+          meter_value:
+            timestamp: "now"
+            sampled_value:
+              - value: "auto_increment_from_1000"
+                unit: "Wh"
+                measurand: "Energy.Active.Import.Register"
+                
+      # Stop transaction
+      - delay: 60
+      - send: "StopTransaction"
+        params:
+          meter_stop: 5000
+          timestamp: "now"
+          transaction_id: "from_start_response"
+        wait_for: "StopTransactionResponse"
+        
+      # Final status
+      - send: "StatusNotification"
+        params:
+          connector_id: 1
+          status: "Available"
+          error_code: "NoError"
+
+expectations:
+  csms_should:
+    - accept_all_transactions: true
+    - respond_within_timeout: 30
+    
+results:
+  format: ["json"]
+  include: ["transaction_log", "response_times"]

@@ -1,0 +1,17 @@
+# Default configuration for OCPP Chaos Simulator
+
+server:
+  host: "localhost"
+  port: 8080
+
+database:
+  type: "sqlite"
+  path: "./data/simulator.db"
+
+ocpp:
+  default_version: "1.6"
+  timeout: 30
+
+logging:
+  level: "info"
+  format: "json"

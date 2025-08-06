@@ -1,0 +1,157 @@
+# OCPP Chaos Scenario: Network and Message Corruption Test
+name: "Chaos Network & Message Test"
+description: "Tests CSMS resilience under network failures and corrupted messages"
+version: "1.0"
+duration: 300 # 5 minutes total
+tags: ["chaos", "network", "corruption", "load"]
+
+# Charger Configuration
+chargers:
+  count: 100
+  template:
+    model: "ChargePoint_Pro"
+    vendor: "TestVendor"
+    connectors: 2
+    ocpp_version: "1.6"
+    features: ["Core", "FirmwareManagement", "RemoteTrigger"]
+
+# CSMS Connection
+csms:
+  endpoint: "ws://localhost:8080/ocpp"
+  protocol: "ocpp1.6"
+
+# Scenario Execution Flow
+timeline:
+  # Phase 1: Setup and Normal Operation (0-30s)
+  - at: 0
+    action: "create_chargers"
+    params:
+      count: 100
+      prefix: "CP"
+      
+  - at: 5
+    action: "start_normal_flow"
+    targets: "all"
+    flow:
+      - send: "BootNotification"
+        wait_for: "BootNotificationResponse"
+      - delay: 2
+      - send: "Heartbeat"
+        repeat: true
+        interval: 30
+      - send: "StatusNotification"
+        params:
+          connector_id: 1
+          status: "Available"
+
+  # Phase 2: Chaos Injection (30s+)
+  - at: 30
+    action: "inject_chaos"
+    strategy: "network_loss"
+    targets:
+      range: [10, 19] # chargers CP010-CP019
+    params:
+      duration: 45 # seconds offline
+      reconnect: true
+      
+  - at: 35
+    action: "inject_chaos" 
+    strategy: "corrupt_messages"
+    targets:
+      range: [50, 54] # chargers CP050-CP054
+    params:
+      corruption_rate: 0.3 # 30% of messages
+      types: ["StatusNotification", "MeterValues"]
+      corruption_methods:
+        - "invalid_json"
+        - "missing_fields"
+        - "wrong_data_types"
+
+  - at: 45
+    action: "inject_chaos"
+    strategy: "out_of_order_messages"
+    targets:
+      specific: ["CP025", "CP026", "CP027"]
+    params:
+      scenario: "stop_without_start"
+      message: "StopTransaction"
+      
+  - at: 60
+    action: "inject_chaos"
+    strategy: "message_flooding"
+    targets:
+      range: [80, 89]
+    params:
+      message_type: "Heartbeat"
+      rate: 10 # messages per second
+      duration: 30
+
+  # Phase 3: Recovery Testing (120s+)  
+  - at: 120
+    action: "recovery_test"
+    targets: "all_affected"
+    params:
+      restore_normal_operation: true
+      validate_state_consistency: true
+
+# Expected Behaviors (for validation)
+expectations:
+  csms_should:
+    - handle_malformed_messages_gracefully: true
+    - maintain_connection_during_flooding: true
+    - track_offline_chargers: true
+    - reject_invalid_transactions: true
+    
+  chargers_should:
+    - reconnect_after_network_loss: true
+    - resume_heartbeat_after_reconnection: true
+    - maintain_transaction_state: true
+
+# Monitoring and Alerts
+monitoring:
+  metrics:
+    - connection_success_rate
+    - message_response_time
+    - error_rate_by_type
+    - memory_usage
+    - concurrent_connections
+    
+  alerts:
+    - trigger: "error_rate > 5%"
+      action: "log_warning"
+    - trigger: "memory_usage > 80%"
+      action: "alert_admin"
+    - trigger: "connection_success_rate < 95%"
+      action: "fail_test"
+
+# Chaos Strategies Definition
+chaos_strategies:
+  network_loss:
+    description: "Simulates 3G/4G signal loss"
+    implementation: "disconnect_websocket"
+    configurable: ["duration", "reconnect_behavior"]
+    
+  corrupt_messages:
+    description: "Sends malformed OCPP messages"
+    implementation: "modify_message_payload"
+    configurable: ["corruption_rate", "corruption_methods"]
+    
+  out_of_order_messages:
+    description: "Sends messages in wrong sequence"
+    implementation: "bypass_state_machine"
+    configurable: ["message_type", "timing"]
+    
+  message_flooding:
+    description: "Overwhelm CSMS with high message rate"
+    implementation: "rapid_message_sending"
+    configurable: ["rate", "duration", "message_type"]
+
+# Results Export
+results:
+  format: ["json", "csv", "html_report"]
+  include:
+    - timeline_events
+    - error_logs
+    - performance_metrics
+    - chaos_injection_results
+  export_path: "./results/{scenario_name}_{timestamp}"
