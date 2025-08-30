@@ -1,0 +1,56 @@
+# Example OCPP Scenario with Basic Authentication
+name: "Basic Auth Test"
+description: "Test scenario with basic authentication for CSMS connection"
+version: "1.0"
+duration: 60
+tags: ["auth", "basic", "test"]
+
+chargers:
+  count: 2
+  template:
+    model: "AuthTestCharger"
+    vendor: "TestCorp"
+    connectors: 1
+    ocpp_version: "1.6"
+
+csms:
+  endpoint: "ws://localhost:8080/ocpp"
+  protocol: "ocpp1.6"
+  basic_auth_user: "admin"      # Username for basic auth
+  basic_auth_pass: "password123" # Password for basic auth
+
+timeline:
+  - at: 0
+    action: "create_chargers"
+    params:
+      count: 2
+      prefix: "AUTH"
+
+  - at: 5
+    action: "start_flow"
+    targets: "all"
+    flow:
+      # Boot sequence with auth
+      - send: "BootNotification"
+        params:
+          charge_point_model: "AuthTestCharger"
+          charge_point_vendor: "TestCorp"
+        wait_for: "BootNotificationResponse"
+        expect:
+          status: "Accepted"
+          
+      # Initial status
+      - send: "StatusNotification"
+        params:
+          connector_id: 0
+          status: "Available"
+          error_code: "NoError"
+
+expectations:
+  csms_should:
+    accept_all_connections: true
+    require_authentication: true
+    
+results:
+  format: ["json"]
+  include: ["connection_log", "auth_status"]

@@ -2,7 +2,10 @@ package ocpp
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"net/url"
 	"sync"
 	"time"
@@ -13,33 +16,43 @@ import (
 
 // OCPP16Client implements the OCPP 1.6 client
 type OCPP16Client struct {
-	chargerID    string
-	endpoint     string
-	conn         *websocket.Conn
+	config         ClientConfig
+	conn           *websocket.Conn
 	messageHandler MessageHandler
-	connected    bool
-	mu           sync.RWMutex
-	logger       *logrus.Entry
-	ctx          context.Context
-	cancel       context.CancelFunc
+	connected      bool
+	mu             sync.RWMutex
+	logger         *logrus.Entry
+	ctx            context.Context
+	cancel         context.CancelFunc
+	pendingCalls   map[string]chan *OCPP16Message // For tracking call responses
+	messageQueue   chan []byte
 }
 
 // NewOCCP16Client creates a new OCPP 1.6 client
 func NewOCCP16Client(chargerID, endpoint string) Client {
+	return NewOCCP16ClientWithConfig(ClientConfig{
+		ChargerID: chargerID,
+		Endpoint:  endpoint,
+	})
+}
+
+// NewOCCP16ClientWithConfig creates a new OCPP 1.6 client with full config
+func NewOCCP16ClientWithConfig(config ClientConfig) Client {
 	ctx, cancel := context.WithCancel(context.Background())
 	
 	logger := logrus.WithFields(logrus.Fields{
 		"component":  "ocpp16",
-		"charger_id": chargerID,
+		"charger_id": config.ChargerID,
 	})
 
 	return &OCPP16Client{
-		chargerID: chargerID,
-		endpoint:  endpoint,
-		connected: false,
-		logger:    logger,
-		ctx:       ctx,
-		cancel:    cancel,
+		config:       config,
+		connected:    false,
+		logger:       logger,
+		ctx:          ctx,
+		cancel:       cancel,
+		pendingCalls: make(map[string]chan *OCPP16Message),
+		messageQueue: make(chan []byte, 100),
 	}
 }
 
@@ -48,26 +61,46 @@ func (c *OCPP16Client) Connect(ctx context.Context) error {
 	c.logger.Info("Connecting to CSMS")
 
 	// Parse and validate endpoint URL
-	u, err := url.Parse(c.endpoint)
+	u, err := url.Parse(c.config.Endpoint)
 	if err != nil {
 		return fmt.Errorf("invalid endpoint URL: %w", err)
 	}
 
 	// Add charger ID to path
-	u.Path = fmt.Sprintf("%s/%s", u.Path, c.chargerID)
+	u.Path = fmt.Sprintf("%s/%s", u.Path, c.config.ChargerID)
 
-	// TODO: Implement actual WebSocket connection
-	// Add OCPP subprotocol headers when implementing
-	// headers := map[string][]string{
-	//     "Sec-WebSocket-Protocol": {"ocpp1.6"},
-	// }
-	// dialer := websocket.Dialer{
-	//     HandshakeTimeout: 10 * time.Second,
-	// }
-	// conn, _, err := dialer.Dial(u.String(), headers)
+	// Set up WebSocket headers with OCPP subprotocol
+	headers := http.Header{
+		"Sec-WebSocket-Protocol": []string{"ocpp1.6"},
+	}
+	
+	// Add basic auth if credentials provided
+	if c.config.BasicAuthUser != "" && c.config.BasicAuthPass != "" {
+		headers.Set("Authorization", "Basic "+basicAuth(c.config.BasicAuthUser, c.config.BasicAuthPass))
+	}
+
+	// Create WebSocket dialer with timeout
+	dialer := websocket.Dialer{
+		HandshakeTimeout: 10 * time.Second,
+	}
+
+	// Connect to CSMS
+	c.logger.WithField("url", u.String()).Debug("Connecting to CSMS")
+	conn, resp, err := dialer.Dial(u.String(), headers)
+	if err != nil {
+		return fmt.Errorf("failed to dial websocket: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Verify OCPP subprotocol was accepted
+	if resp.Header.Get("Sec-WebSocket-Protocol") != "ocpp1.6" {
+		conn.Close()
+		return fmt.Errorf("server did not accept OCPP 1.6 subprotocol")
+	}
 
 	c.mu.Lock()
-	c.connected = true // TODO: Set based on actual connection
+	c.conn = conn
+	c.connected = true
 	c.mu.Unlock()
 
 	c.logger.Info("Connected to CSMS successfully")
@@ -88,9 +121,13 @@ func (c *OCPP16Client) Disconnect(ctx context.Context) error {
 	defer c.mu.Unlock()
 
 	if c.conn != nil {
-		// TODO: Implement graceful close
-		// c.conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
-		// c.conn.Close()
+		// Send close message
+		deadline := time.Now().Add(5 * time.Second)
+		c.conn.SetWriteDeadline(deadline)
+		c.conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, "charger disconnecting"))
+		
+		// Close connection
+		c.conn.Close()
 		c.conn = nil
 	}
 
@@ -117,12 +154,43 @@ func (c *OCPP16Client) SendMessage(ctx context.Context, message Message) error {
 		"message_id":   message.GetMessageID(),
 	}).Debug("Sending OCPP message")
 
-	// TODO: Implement message serialization and sending
-	// - Serialize message to JSON
-	// - Send via WebSocket
-	// - Handle response/confirmation
+	// Ensure message is OCPP16Message
+	ocppMsg, ok := message.(*OCPP16Message)
+	if !ok {
+		return fmt.Errorf("invalid message type, expected OCPP16Message")
+	}
 
-	return fmt.Errorf("not implemented")
+	// Create OCPP 1.6 Call array format: [MessageTypeId, MessageId, Action, Payload]
+	callArray := []interface{}{
+		2, // MessageTypeId for Call
+		ocppMsg.MessageID,
+		ocppMsg.Action,
+		ocppMsg.Payload,
+	}
+
+	// Marshal to JSON
+	data, err := json.Marshal(callArray)
+	if err != nil {
+		return fmt.Errorf("failed to marshal message: %w", err)
+	}
+
+	c.logger.WithFields(logrus.Fields{
+		"data": string(data),
+	}).Debug("Sending OCPP message")
+
+	// Send message
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.conn == nil {
+		return fmt.Errorf("websocket connection is nil")
+	}
+
+	if err := c.conn.WriteMessage(websocket.TextMessage, data); err != nil {
+		return fmt.Errorf("failed to write message: %w", err)
+	}
+
+	return nil
 }
 
 // SetMessageHandler sets the message handler for incoming messages
@@ -146,6 +214,10 @@ func (c *OCPP16Client) readMessages() {
 		if r := recover(); r != nil {
 			c.logger.Errorf("Panic in readMessages: %v", r)
 		}
+		// Mark as disconnected on exit
+		c.mu.Lock()
+		c.connected = false
+		c.mu.Unlock()
 	}()
 
 	for {
@@ -153,11 +225,122 @@ func (c *OCPP16Client) readMessages() {
 		case <-c.ctx.Done():
 			return
 		default:
-			// TODO: Implement message reading
-			// - Read from WebSocket
-			// - Parse OCPP message
-			// - Handle with messageHandler
-			time.Sleep(100 * time.Millisecond) // Prevent busy loop
+			// Set read deadline
+			c.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+			
+			// Read message from WebSocket
+			messageType, data, err := c.conn.ReadMessage()
+			if err != nil {
+				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+					c.logger.WithError(err).Error("WebSocket connection closed unexpectedly")
+				}
+				return
+			}
+
+			if messageType != websocket.TextMessage {
+				c.logger.WithField("type", messageType).Warn("Received non-text message")
+				continue
+			}
+
+			// Parse OCPP message
+			c.logger.WithField("data", string(data)).Debug("Received raw message")
+			
+			msg, err := c.parseOCPPMessage(data)
+			if err != nil {
+				c.logger.WithError(err).Error("Failed to parse OCPP message")
+				continue
+			}
+
+			// Handle message
+			if c.messageHandler != nil {
+				go func(m *OCPP16Message) {
+					if err := c.messageHandler.HandleMessage(c.ctx, m); err != nil {
+						c.logger.WithError(err).Error("Failed to handle message")
+					}
+				}(msg)
+			}
 		}
 	}
+}
+
+// parseOCPPMessage parses raw OCPP 1.6 message
+func (c *OCPP16Client) parseOCPPMessage(data []byte) (*OCPP16Message, error) {
+	// OCPP 1.6 uses array format: [MessageTypeId, MessageId, ...]
+	var msgArray []json.RawMessage
+	if err := json.Unmarshal(data, &msgArray); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal message array: %w", err)
+	}
+
+	if len(msgArray) < 2 {
+		return nil, fmt.Errorf("invalid message format: too few elements")
+	}
+
+	// Parse message type ID
+	var messageTypeID int
+	if err := json.Unmarshal(msgArray[0], &messageTypeID); err != nil {
+		return nil, fmt.Errorf("failed to parse message type ID: %w", err)
+	}
+
+	// Parse message ID
+	var messageID string
+	if err := json.Unmarshal(msgArray[1], &messageID); err != nil {
+		return nil, fmt.Errorf("failed to parse message ID: %w", err)
+	}
+
+	msg := &OCPP16Message{
+		MessageID: messageID,
+	}
+
+	switch messageTypeID {
+	case 2: // Call
+		if len(msgArray) < 4 {
+			return nil, fmt.Errorf("invalid Call message format")
+		}
+		
+		var action string
+		if err := json.Unmarshal(msgArray[2], &action); err != nil {
+			return nil, fmt.Errorf("failed to parse action: %w", err)
+		}
+		
+		msg.MessageType = "Call"
+		msg.Action = action
+		msg.Payload = msgArray[3] // Keep as raw JSON for now
+		
+	case 3: // CallResult
+		if len(msgArray) < 3 {
+			return nil, fmt.Errorf("invalid CallResult message format")
+		}
+		
+		msg.MessageType = "CallResult"
+		msg.Payload = msgArray[2] // Keep as raw JSON for now
+		
+	case 4: // CallError
+		if len(msgArray) < 5 {
+			return nil, fmt.Errorf("invalid CallError message format")
+		}
+		
+		msg.MessageType = "CallError"
+		// Parse error details
+		var errorCode string
+		var errorDescription string
+		json.Unmarshal(msgArray[2], &errorCode)
+		json.Unmarshal(msgArray[3], &errorDescription)
+		
+		msg.Payload = map[string]interface{}{
+			"errorCode":        errorCode,
+			"errorDescription": errorDescription,
+			"errorDetails":     msgArray[4],
+		}
+		
+	default:
+		return nil, fmt.Errorf("unknown message type ID: %d", messageTypeID)
+	}
+
+	return msg, nil
+}
+
+// basicAuth creates a basic auth string from username and password
+func basicAuth(username, password string) string {
+	auth := username + ":" + password
+	return base64.StdEncoding.EncodeToString([]byte(auth))
 }

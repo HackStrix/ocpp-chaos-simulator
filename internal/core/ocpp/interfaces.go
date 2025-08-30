@@ -39,3 +39,11 @@ type Protocol interface {
 	ParseMessage(data []byte) (Message, error)
 	SerializeMessage(message Message) ([]byte, error)
 }
+
+// ClientConfig holds configuration for OCPP client
+type ClientConfig struct {
+	ChargerID     string
+	Endpoint      string
+	BasicAuthUser string
+	BasicAuthPass string
+}

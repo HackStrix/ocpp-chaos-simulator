@@ -119,6 +119,16 @@ type StopTransactionResponse struct {
 	IdTagInfo *IdTagInfo `json:"idTagInfo,omitempty"`
 }
 
+// MeterValuesRequest represents OCPP 1.6 MeterValues request
+type MeterValuesRequest struct {
+	ConnectorId   int          `json:"connectorId"`
+	TransactionId *int         `json:"transactionId,omitempty"`
+	MeterValue    []MeterValue `json:"meterValue"`
+}
+
+// MeterValuesResponse represents OCPP 1.6 MeterValues response
+type MeterValuesResponse struct{}
+
 // IdTagInfo represents OCPP 1.6 IdTagInfo
 type IdTagInfo struct {
 	ExpiryDate  *time.Time `json:"expiryDate,omitempty"`

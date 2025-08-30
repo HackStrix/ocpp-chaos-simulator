@@ -25,8 +25,11 @@ type DatabaseConfig struct {
 }
 
 type OCPPConfig struct {
-	DefaultVersion string `mapstructure:"default_version"`
-	Timeout        int    `mapstructure:"timeout"`
+	DefaultVersion   string `mapstructure:"default_version"`
+	Timeout          int    `mapstructure:"timeout"`
+	DefaultAuthUser  string `mapstructure:"default_auth_user"`
+	DefaultAuthPass  string `mapstructure:"default_auth_pass"`
+	DefaultEndpoint  string `mapstructure:"default_endpoint"`
 }
 
 type LoggingConfig struct {

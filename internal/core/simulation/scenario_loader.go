@@ -127,6 +127,8 @@ func (sl *ScenarioLoader) ConvertToSimulationConfig(scenario *ScenarioConfig) *S
 			Features:       scenario.Chargers.Template.Features,
 			CSMSEndpoint:   scenario.CSMS.Endpoint,
 			OCPPVersion:    scenario.Chargers.Template.OCPPVersion,
+			BasicAuthUser:  scenario.CSMS.BasicAuthUser,
+			BasicAuthPass:  scenario.CSMS.BasicAuthPass,
 			CustomData:     scenario.Chargers.Template.CustomData,
 		}
 	}

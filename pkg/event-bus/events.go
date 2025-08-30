@@ -83,3 +83,17 @@ type ChaosEventData struct {
 	Target       string `json:"target"`
 	Description  string `json:"description"`
 }
+
+// ChargerEvent represents a generic charger event
+type ChargerEvent struct {
+	ChargerID string                 `json:"charger_id"`
+	Data      map[string]interface{} `json:"data"`
+}
+
+// NewChargerEvent creates a new charger event
+func NewChargerEvent(eventType string, chargerID string, data map[string]interface{}) Event {
+	return NewEvent(eventType, ChargerEvent{
+		ChargerID: chargerID,
+		Data:      data,
+	})
+}

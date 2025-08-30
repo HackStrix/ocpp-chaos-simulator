@@ -37,8 +37,10 @@ type ChargerTemplateConfig struct {
 
 // CSMSConfig defines CSMS connection parameters
 type CSMSConfig struct {
-	Endpoint string `json:"endpoint" yaml:"endpoint"`
-	Protocol string `json:"protocol" yaml:"protocol"`
+	Endpoint      string `json:"endpoint" yaml:"endpoint"`
+	Protocol      string `json:"protocol" yaml:"protocol"`
+	BasicAuthUser string `json:"basic_auth_user,omitempty" yaml:"basic_auth_user,omitempty"`
+	BasicAuthPass string `json:"basic_auth_pass,omitempty" yaml:"basic_auth_pass,omitempty"`
 }
 
 // TimelineEvent represents an action at a specific time
