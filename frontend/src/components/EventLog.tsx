@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useMemo } from 'react'
-import { RealTimeEvent, EventFilter } from '@/types/events'
+import { RealTimeEvent, EventFilter, ChargerEvent, OCPPMessageEvent } from '@/types/events'
 import { getEventLevelColor, getEventTypeDisplayName, formatTimestamp } from '@/lib/utils'
 import { Filter, Search, X, AlertTriangle, Info, AlertCircle } from 'lucide-react'
 
@@ -25,7 +25,7 @@ export default function EventLog({ events }: EventLogProps) {
   
   const uniqueChargers = useMemo(() => 
     Array.from(new Set(events
-      .filter(e => 'charger_id' in e.data)
+      .filter((e): e is RealTimeEvent & { data: { charger_id: string } } => 'charger_id' in e.data)
       .map(e => e.data.charger_id)
     )), [events]
   )
@@ -86,13 +86,16 @@ export default function EventLog({ events }: EventLogProps) {
     })
   }
 
-  const toggleFilter = (filterType: keyof EventFilter, value: string) => {
-    setFilter(prev => ({
-      ...prev,
-      [filterType]: prev[filterType].includes(value as never)
-        ? prev[filterType].filter((item: string) => item !== value)
-        : [...prev[filterType], value]
-    }))
+  const toggleFilter = (filterType: keyof Pick<EventFilter, 'types' | 'chargers' | 'levels'>, value: string) => {
+    setFilter(prev => {
+      const currentArray = prev[filterType]
+      return {
+        ...prev,
+        [filterType]: currentArray.includes(value as never)
+          ? currentArray.filter((item: string) => item !== value)
+          : [...currentArray, value]
+      }
+    })
   }
 
   return (

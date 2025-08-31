@@ -1,10 +1,14 @@
 import type { Config } from 'tailwindcss'
+import path from 'path'
 
 const config: Config = {
   content: [
-    './src/pages/**/*.{js,ts,jsx,tsx,mdx}',
-    './src/components/**/*.{js,ts,jsx,tsx,mdx}',
-    './src/app/**/*.{js,ts,jsx,tsx,mdx}',
+    './src/**/*.{js,ts,jsx,tsx,mdx}',
+    './.next/**/*.js',
+  ],
+  safelist: [
+    'bg-gray-50', 'text-gray-900', 'bg-white', 'shadow-sm', 
+    'border-b', 'text-xl', 'font-bold', 'h-16', 'max-w-7xl'
   ],
   theme: {
     extend: {
