@@ -1,5 +1,23 @@
+# Go specific
 .env*
 bin/
 data/*.db
 coverage.out
 coverage.html
+
+# Frontend specific (Node.js/Next.js)
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/build/
+frontend/dist/
+frontend/.env*.local
+frontend/.vercel/
+frontend/*.tsbuildinfo
+frontend/next-env.d.ts
+
+# General
+.DS_Store
+*.pem
+*.log
+
