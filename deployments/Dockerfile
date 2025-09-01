@@ -14,8 +14,8 @@ RUN go mod download && go mod verify
 COPY . .
 
 # Build both applications with optimizations
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -a -installsuffix cgo -o simulator ./cmd/simulator
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -a -installsuffix cgo -o test-charger ./cmd/test-charger
+RUN CGO_ENABLED=1 GOOS=linux go build -ldflags="-w -s" -a -installsuffix cgo -o simulator ./cmd/simulator
+RUN CGO_ENABLED=1 GOOS=linux go build -ldflags="-w -s" -a -installsuffix cgo -o test-charger ./cmd/test-charger
 
 FROM debian:bookworm-slim
 
