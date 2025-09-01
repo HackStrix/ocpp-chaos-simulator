@@ -24,3 +24,4 @@ docker-compose -f deployments/docker-compose.prod.yml up -d
 - 📦 **Registry**: Images pushed to GHCR automatically
 
 For detailed documentation, see [docs/ci-cd-pipeline.md](../docs/ci-cd-pipeline.md)
+
