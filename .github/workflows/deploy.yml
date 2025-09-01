@@ -97,27 +97,108 @@ jobs:
         platforms: linux/amd64,linux/arm64
 
   deploy-via-portainer:
-    name: Deploy via Portainer  
+    name: Deploy via Portainer
     runs-on: [self-hosted, home]
     needs: [build-and-push, build-frontend-image]
     if: success() && github.ref == 'refs/heads/main'
     
     steps:
-    - name: Deploy to Portainer
+    - name: Verify Portainer Connection
+      run: |
+        echo "🔍 Verifying connection to Portainer..."
+        
+        # Test connection to Portainer
+        for i in {1..5}; do
+          if curl -f -s --connect-timeout 10 https://portainer.sankalpnarula.com/api/status > /dev/null; then
+            echo "✅ Successfully connected to Portainer"
+            break
+          fi
+          echo "⏳ Attempt $i/5 - Waiting for Portainer connection..."
+          sleep 3
+        done
+        
+        # Final connection test
+        if ! curl -f -s --connect-timeout 10 https://portainer.sankalpnarula.com/api/status > /dev/null; then
+          echo "❌ Failed to connect to Portainer"
+          exit 1
+        fi
+
+    - name: Trigger Portainer Stack Redeployment
       env:
-        PORTAINER_URL: https://portainer.sankalpnarula.com  # or http://localhost:9000
+        PORTAINER_URL: https://portainer.sankalpnarula.com
         PORTAINER_TOKEN: ${{ secrets.PORTAINER_ACCESS_TOKEN }}
         STACK_NAME: ocpp-chaos-sim
       run: |
         set -e
-        echo "🚀 Starting deployment..."
         
-        # Get stack ID and deploy (same script as before)
+        echo "🚀 Starting deployment process..."
+        
+        # Get stack ID
+        echo "🔍 Looking for stack: $STACK_NAME"
         STACK_ID=$(curl -s -H "X-API-Key: $PORTAINER_TOKEN" \
           "$PORTAINER_URL/api/stacks" | \
           jq -r ".[] | select(.Name == \"$STACK_NAME\") | .Id")
-          
-        # ... rest of deployment logic
+        
+        if [ "$STACK_ID" = "null" ] || [ -z "$STACK_ID" ]; then
+          echo "❌ Stack '$STACK_NAME' not found. Available stacks:"
+          curl -s -H "X-API-Key: $PORTAINER_TOKEN" \
+            "$PORTAINER_URL/api/stacks" | jq -r '.[].Name'
+          exit 1
+        fi
+        
+        echo "📋 Found stack ID: $STACK_ID"
+        
+        # Get endpoint ID (usually 1 for local Docker, but let's be sure)
+        ENDPOINT_ID=$(curl -s -H "X-API-Key: $PORTAINER_TOKEN" \
+          "$PORTAINER_URL/api/stacks/$STACK_ID" | \
+          jq -r '.EndpointId')
+        
+        echo "🎯 Using endpoint ID: $ENDPOINT_ID"
+        
+        # Trigger stack update (pull latest images and redeploy)
+        echo "🔄 Triggering stack redeployment with image pull..."
+        RESPONSE=$(curl -s -w "%{http_code}" -X PUT \
+          -H "X-API-Key: $PORTAINER_TOKEN" \
+          -H "Content-Type: application/json" \
+          -d '{
+            "pullImage": true,
+            "prune": true
+          }' \
+          "$PORTAINER_URL/api/stacks/$STACK_ID?endpointId=$ENDPOINT_ID")
+        
+        HTTP_CODE="${RESPONSE: -3}"
+        RESPONSE_BODY="${RESPONSE%???}"
+        
+        if [ "$HTTP_CODE" = "200" ]; then
+          echo "✅ Stack redeployment triggered successfully!"
+          echo "📝 Response: $RESPONSE_BODY"
+        else
+          echo "❌ Deployment failed with HTTP $HTTP_CODE"
+          echo "📝 Response: $RESPONSE_BODY"
+          exit 1
+        fi
+        
+        # Wait for deployment to process
+        echo "⏳ Waiting for deployment to complete..."
+        sleep 15
+        
+        # Check deployment status
+        STACK_STATUS=$(curl -s -H "X-API-Key: $PORTAINER_TOKEN" \
+          "$PORTAINER_URL/api/stacks/$STACK_ID" | \
+          jq -r '.Status // "unknown"')
+        
+        echo "📊 Stack status: $STACK_STATUS"
+        
+        # Optional: Check if services are running
+        echo "🔍 Checking service status..."
+        SERVICES=$(curl -s -H "X-API-Key: $PORTAINER_TOKEN" \
+          "$PORTAINER_URL/api/endpoints/$ENDPOINT_ID/docker/services" | \
+          jq -r '.[] | select(.Spec.Labels."com.docker.compose.project" == "'$STACK_NAME'") | "\(.Spec.Name): \(.ServiceStatus.RunningTasks)/\(.Spec.Mode.Replicated.Replicas)"' 2>/dev/null || echo "Service status unavailable")
+        
+        if [ "$SERVICES" != "Service status unavailable" ]; then
+          echo "📋 Services:"
+          echo "$SERVICES"
+        fi
 
     - name: Deployment Summary
       if: always()
@@ -129,14 +210,13 @@ jobs:
           echo "🔗 **Portainer**: [View Stack](https://portainer.sankalpnarula.com)" >> $GITHUB_STEP_SUMMARY
           echo "📦 **Backend Image**: \`ghcr.io/${{ github.repository }}:latest\`" >> $GITHUB_STEP_SUMMARY
           echo "📦 **Frontend Image**: \`ghcr.io/${{ github.repository }}-frontend:latest\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Deployment included:**" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Pull latest images from GHCR" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Recreate containers with new images" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Prune old unused images" >> $GITHUB_STEP_SUMMARY
         else
           echo "❌ **Status**: Deployment failed" >> $GITHUB_STEP_SUMMARY
           echo "🔍 **Check**: Review job logs for details" >> $GITHUB_STEP_SUMMARY
+          echo "🔗 **Portainer**: [Check Stack Status](https://portainer.sankalpnarula.com)" >> $GITHUB_STEP_SUMMARY
         fi
-
-    - name: Cleanup Tailscale Connection
-      if: always()
-      run: |
-        echo "🔌 Cleaning up Tailscale connection..."
-        sudo tailscale logout || true
-        echo "✅ Tailscale disconnected"
