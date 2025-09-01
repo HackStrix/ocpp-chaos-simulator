@@ -96,23 +96,140 @@ jobs:
         cache-to: type=gha,mode=max
         platforms: linux/amd64,linux/arm64
 
-  notify-deployment:
-    name: Notify Deployment
+  deploy-via-portainer:
+    name: Deploy via Portainer
     runs-on: [self-hosted, home]
     needs: [build-and-push, build-frontend-image]
-    if: always()
+    if: success() && github.ref == 'refs/heads/main'
     
     steps:
-    - name: Deployment Summary
+    - name: Install and Connect Tailscale
+      env:
+        TS_AUTH_KEY: ${{ secrets.TS_AUTH_KEY }}
       run: |
-        echo "🚀 Deployment Summary" >> $GITHUB_STEP_SUMMARY
+        # Install Tailscale (if not already installed)
+        if ! command -v tailscale &> /dev/null; then
+          echo "Installing Tailscale..."
+          curl -fsSL https://tailscale.com/install.sh | sh
+        fi
+        
+        # Connect to Tailscale using auth key
+        echo "Connecting to Tailscale network..."
+        sudo tailscale up --auth-key="$TS_AUTH_KEY" --accept-routes --reset
+        
+        # Wait for connection to establish
+        sleep 5
+        
+        # Verify connection
+        echo "Tailscale status:"
+        sudo tailscale status
+
+    - name: Verify Portainer Connection
+      run: |
+        echo "Verifying connection to Portainer..."
+        
+        # Test connection to Portainer
+        for i in {1..10}; do
+          if curl -f -s --connect-timeout 10 https://portainer.sankalpnarula.com/api/status > /dev/null; then
+            echo "✅ Successfully connected to Portainer via Tailscale"
+            break
+          fi
+          echo "⏳ Attempt $i/10 - Waiting for Portainer connection..."
+          sleep 3
+        done
+        
+        # Final connection test
+        if ! curl -f -s --connect-timeout 10 https://portainer.sankalpnarula.com/api/status > /dev/null; then
+          echo "❌ Failed to connect to Portainer"
+          echo "Tailscale status:"
+          sudo tailscale status
+          exit 1
+        fi
+
+    - name: Trigger Portainer Stack Redeployment
+      env:
+        PORTAINER_URL: https://portainer.sankalpnarula.com
+        PORTAINER_TOKEN: ${{ secrets.PORTAINER_ACCESS_TOKEN }}
+        STACK_NAME: ocpp-chaos-sim  # Adjust this to your actual stack name
+      run: |
+        set -e
+        
+        echo "🚀 Starting deployment process..."
+        
+        # Get stack ID
+        echo "🔍 Looking for stack: $STACK_NAME"
+        STACK_ID=$(curl -s -H "X-API-Key: $PORTAINER_TOKEN" \
+          "$PORTAINER_URL/api/stacks" | \
+          jq -r ".[] | select(.Name == \"$STACK_NAME\") | .Id")
+        
+        if [ "$STACK_ID" = "null" ] || [ -z "$STACK_ID" ]; then
+          echo "❌ Stack '$STACK_NAME' not found. Available stacks:"
+          curl -s -H "X-API-Key: $PORTAINER_TOKEN" \
+            "$PORTAINER_URL/api/stacks" | jq -r '.[].Name'
+          exit 1
+        fi
+        
+        echo "📋 Found stack ID: $STACK_ID"
+        
+        # Get endpoint ID (usually 1 for local Docker, but let's be sure)
+        ENDPOINT_ID=$(curl -s -H "X-API-Key: $PORTAINER_TOKEN" \
+          "$PORTAINER_URL/api/stacks/$STACK_ID" | \
+          jq -r '.EndpointId')
+        
+        echo "🎯 Using endpoint ID: $ENDPOINT_ID"
+        
+        # Trigger stack update (pull latest images and redeploy)
+        echo "🔄 Triggering stack redeployment..."
+        RESPONSE=$(curl -s -w "%{http_code}" -X PUT \
+          -H "X-API-Key: $PORTAINER_TOKEN" \
+          -H "Content-Type: application/json" \
+          -d '{
+            "pullImage": true,
+            "prune": true
+          }' \
+          "$PORTAINER_URL/api/stacks/$STACK_ID?endpointId=$ENDPOINT_ID")
+        
+        HTTP_CODE="${RESPONSE: -3}"
+        RESPONSE_BODY="${RESPONSE%???}"
+        
+        if [ "$HTTP_CODE" = "200" ]; then
+          echo "✅ Stack redeployment triggered successfully!"
+          echo "📝 Response: $RESPONSE_BODY"
+        else
+          echo "❌ Deployment failed with HTTP $HTTP_CODE"
+          echo "📝 Response: $RESPONSE_BODY"
+          exit 1
+        fi
+        
+        # Wait a moment and check deployment status
+        echo "⏳ Waiting for deployment to complete..."
+        sleep 10
+        
+        # Check if stack is running
+        STACK_STATUS=$(curl -s -H "X-API-Key: $PORTAINER_TOKEN" \
+          "$PORTAINER_URL/api/stacks/$STACK_ID" | \
+          jq -r '.Status')
+        
+        echo "📊 Stack status: $STACK_STATUS"
+
+    - name: Deployment Summary
+      if: always()
+      run: |
+        echo "🎯 **Portainer Deployment Summary**" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "**Images built and pushed to GHCR:**" >> $GITHUB_STEP_SUMMARY
-        echo "- Backend: \`ghcr.io/${{ github.repository }}:latest\`" >> $GITHUB_STEP_SUMMARY
-        echo "- Frontend: \`ghcr.io/${{ github.repository }}-frontend:latest\`" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "**Pull commands for your orchestration tool:**" >> $GITHUB_STEP_SUMMARY
-        echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
-        echo "docker pull ghcr.io/${{ github.repository }}:latest" >> $GITHUB_STEP_SUMMARY
-        echo "docker pull ghcr.io/${{ github.repository }}-frontend:latest" >> $GITHUB_STEP_SUMMARY
-        echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+        if [ "${{ job.status }}" = "success" ]; then
+          echo "✅ **Status**: Deployment successful" >> $GITHUB_STEP_SUMMARY
+          echo "🔗 **Portainer**: [View Stack](https://portainer.sankalpnarula.com)" >> $GITHUB_STEP_SUMMARY
+          echo "📦 **Backend Image**: \`ghcr.io/${{ github.repository }}:latest\`" >> $GITHUB_STEP_SUMMARY
+          echo "📦 **Frontend Image**: \`ghcr.io/${{ github.repository }}-frontend:latest\`" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ **Status**: Deployment failed" >> $GITHUB_STEP_SUMMARY
+          echo "🔍 **Check**: Review job logs for details" >> $GITHUB_STEP_SUMMARY
+        fi
+
+    - name: Cleanup Tailscale Connection
+      if: always()
+      run: |
+        echo "🔌 Cleaning up Tailscale connection..."
+        sudo tailscale logout || true
+        echo "✅ Tailscale disconnected"
