@@ -9,8 +9,7 @@ on:
 jobs:
   test-backend:
     name: Test Go Backend
-    runs-on: home-server-runner
-    
+    runs-on: [self-hosted, home]
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -51,7 +50,9 @@ jobs:
 
   test-frontend:
     name: Test Frontend
-    runs-on: home-server-runner
+    runs-on: [self-hosted, home]
+
+
     
     defaults:
       run:
@@ -85,7 +86,7 @@ jobs:
 
   integration-test:
     name: Integration Tests
-    runs-on: home-server-runner
+    runs-on: [self-hosted, home]
     needs: [test-backend, test-frontend]
     
     services:
