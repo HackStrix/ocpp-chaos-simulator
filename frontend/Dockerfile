@@ -9,19 +9,15 @@ WORKDIR /app
 
 # Copy package files
 COPY package*.json ./
-RUN npm ci --only=production
+RUN npm ci
 
 # Rebuild the source code only when needed
 FROM base AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-
-# Build the application
+ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
-RUN echo "=== Static files ===" && find .next/static -name "*.css" -type f
-RUN echo "=== Standalone files ===" && ls -la .next/standalone/
-RUN echo "=== Static dir ===" && ls -la .next/static/
 
 # Production image, copy all the files and run next
 FROM base AS runner
