@@ -9,7 +9,7 @@ import (
 	"github.com/HackStrix/ocpp-chaos-simulator/internal/core/charger"
 	"github.com/HackStrix/ocpp-chaos-simulator/internal/infrastructure/config"
 	"github.com/HackStrix/ocpp-chaos-simulator/internal/infrastructure/storage"
-	"github.com/HackStrix/ocpp-chaos-simulator/pkg/event-bus"
+	eventbus "github.com/HackStrix/ocpp-chaos-simulator/pkg/event-bus"
 	"github.com/sirupsen/logrus"
 )
 
@@ -117,6 +117,11 @@ func (e *Engine) ListSimulations(ctx context.Context) ([]*storage.Simulation, er
 	return nil, fmt.Errorf("not implemented")
 }
 
+// GetScenarioLoader returns the scenario loader instance
+func (e *Engine) GetScenarioLoader() *ScenarioLoader {
+	return e.scenarioLoader
+}
+
 // RunScenario executes a YAML-defined scenario
 func (e *Engine) RunScenario(ctx context.Context, scenarioFile string) error {
 	e.logger.WithField("scenario_file", scenarioFile).Info("Loading scenario")
@@ -128,9 +133,9 @@ func (e *Engine) RunScenario(ctx context.Context, scenarioFile string) error {
 	}
 
 	e.logger.WithFields(logrus.Fields{
-		"name":         scenario.Name,
-		"chargers":     scenario.Chargers.Count,
-		"duration":     scenario.Duration,
+		"name":            scenario.Name,
+		"chargers":        scenario.Chargers.Count,
+		"duration":        scenario.Duration,
 		"timeline_events": len(scenario.Timeline),
 	}).Info("Starting scenario execution")
 
