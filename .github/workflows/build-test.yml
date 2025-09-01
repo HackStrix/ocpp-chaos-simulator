@@ -9,7 +9,7 @@ on:
 jobs:
   test-backend:
     name: Test Go Backend
-    runs-on: ubuntu-latest
+    runs-on: home-server-runner
     
     steps:
     - name: Checkout code
@@ -51,7 +51,7 @@ jobs:
 
   test-frontend:
     name: Test Frontend
-    runs-on: ubuntu-latest
+    runs-on: home-server-runner
     
     defaults:
       run:
@@ -85,7 +85,7 @@ jobs:
 
   integration-test:
     name: Integration Tests
-    runs-on: ubuntu-latest
+    runs-on: home-server-runner
     needs: [test-backend, test-frontend]
     
     services:
