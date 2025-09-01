@@ -19,9 +19,6 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg/mod \
     CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o test-charger ./cmd/test-charger
 
-# Create data directory with proper permissions
-RUN mkdir -p /app/data && chmod 755 /app/data
-
 # Use distroless for minimal, secure image
 FROM gcr.io/distroless/static-debian12:nonroot
 
@@ -35,9 +32,6 @@ WORKDIR /app
 # Copy binaries and configs
 COPY --from=builder --chown=nonroot:nonroot /app/simulator /app/test-charger ./
 COPY --from=builder --chown=nonroot:nonroot /app/configs ./configs
-
-# Copy data directory with proper ownership
-COPY --from=builder --chown=nonroot:nonroot /app/data ./data
 
 EXPOSE 8080
 
