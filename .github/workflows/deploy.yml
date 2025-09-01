@@ -10,9 +10,54 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  build-and-push:
-    name: Build and Push to GHCR
+  check-changes:
+    name: Check What Changed
     runs-on: [self-hosted, home]
+    outputs:
+      backend-changed: ${{ steps.changes.outputs.backend }}
+      frontend-changed: ${{ steps.changes.outputs.frontend }}
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 2  # Need at least 2 commits to compare
+
+    - name: Check for changes
+      id: changes
+      run: |
+        # Check if this is the first commit (no previous commit to compare)
+        if git rev-parse HEAD~1 >/dev/null 2>&1; then
+          # Compare with previous commit
+          BACKEND_CHANGED=$(git diff --name-only HEAD~1 HEAD | grep -E '^(cmd/|internal/|pkg/|go\.|configs/|deployments/|\.github/workflows/deploy\.yml)' || echo '')
+          FRONTEND_CHANGED=$(git diff --name-only HEAD~1 HEAD | grep -E '^frontend/' || echo '')
+        else
+          # First commit - build everything
+          BACKEND_CHANGED="initial"
+          FRONTEND_CHANGED="initial"
+        fi
+        
+        # Set outputs
+        if [ -n "$BACKEND_CHANGED" ]; then
+          echo "backend=true" >> $GITHUB_OUTPUT
+          echo "🔍 Backend changes detected: $BACKEND_CHANGED"
+        else
+          echo "backend=false" >> $GITHUB_OUTPUT
+          echo "✅ No backend changes detected"
+        fi
+        
+        if [ -n "$FRONTEND_CHANGED" ]; then
+          echo "frontend=true" >> $GITHUB_OUTPUT
+          echo "🔍 Frontend changes detected: $FRONTEND_CHANGED"
+        else
+          echo "frontend=false" >> $GITHUB_OUTPUT
+          echo "✅ No frontend changes detected"
+        fi
+
+  build-and-push:
+    name: Build and Push Backend
+    runs-on: [self-hosted, home]
+    needs: check-changes
+    if: needs.check-changes.outputs.backend-changed == 'true'
     permissions:
       contents: read
       packages: write
@@ -56,6 +101,8 @@ jobs:
   build-frontend-image:
     name: Build Frontend Container
     runs-on: [self-hosted, home]
+    needs: check-changes
+    if: needs.check-changes.outputs.frontend-changed == 'true'
     permissions:
       contents: read
       packages: write
@@ -99,10 +146,22 @@ jobs:
   deploy-via-portainer:
     name: Deploy via Portainer
     runs-on: [self-hosted, home]
-    needs: [build-and-push, build-frontend-image]
-    if: success() && github.ref == 'refs/heads/main'
+    needs: [check-changes, build-and-push, build-frontend-image]
+    if: always() && github.ref == 'refs/heads/main' && 
+        (needs.build-and-push.result == 'success' || needs.build-and-push.result == 'skipped') &&
+        (needs.build-frontend-image.result == 'success' || needs.build-frontend-image.result == 'skipped') &&
+        (needs.check-changes.outputs.backend-changed == 'true' || needs.check-changes.outputs.frontend-changed == 'true')
     
     steps:
+    - name: Deployment Info
+      run: |
+        echo "📋 **Deployment Information**" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "- **Backend Changed**: ${{ needs.check-changes.outputs.backend-changed }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Frontend Changed**: ${{ needs.check-changes.outputs.frontend-changed }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Backend Build**: ${{ needs.build-and-push.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Frontend Build**: ${{ needs.build-frontend-image.result }}" >> $GITHUB_STEP_SUMMARY
+
     - name: Verify Portainer Connection
       run: |
         echo "🔍 Verifying connection to Portainer..."
@@ -128,10 +187,14 @@ jobs:
         PORTAINER_URL: https://portainer.sankalpnarula.com
         PORTAINER_TOKEN: ${{ secrets.PORTAINER_ACCESS_TOKEN }}
         STACK_NAME: ocpp-chaos-sim
+        BACKEND_CHANGED: ${{ needs.check-changes.outputs.backend-changed }}
+        FRONTEND_CHANGED: ${{ needs.check-changes.outputs.frontend-changed }}
       run: |
         set -e
         
         echo "🚀 Starting deployment process..."
+        echo "Backend changed: $BACKEND_CHANGED"
+        echo "Frontend changed: $FRONTEND_CHANGED"
         
         # Get stack ID
         echo "🔍 Looking for stack: $STACK_NAME"
@@ -148,14 +211,14 @@ jobs:
         
         echo "📋 Found stack ID: $STACK_ID"
         
-        # Get endpoint ID (usually 1 for local Docker, but let's be sure)
+        # Get endpoint ID
         ENDPOINT_ID=$(curl -s -H "X-API-Key: $PORTAINER_TOKEN" \
           "$PORTAINER_URL/api/stacks/$STACK_ID" | \
           jq -r '.EndpointId')
         
         echo "🎯 Using endpoint ID: $ENDPOINT_ID"
         
-        # Trigger stack update (pull latest images and redeploy)
+        # Trigger stack update (always pull images, even if only one service changed)
         echo "🔄 Triggering stack redeployment with image pull..."
         RESPONSE=$(curl -s -w "%{http_code}" -X PUT \
           -H "X-API-Key: $PORTAINER_TOKEN" \
@@ -188,17 +251,6 @@ jobs:
           jq -r '.Status // "unknown"')
         
         echo "📊 Stack status: $STACK_STATUS"
-        
-        # Optional: Check if services are running
-        echo "🔍 Checking service status..."
-        SERVICES=$(curl -s -H "X-API-Key: $PORTAINER_TOKEN" \
-          "$PORTAINER_URL/api/endpoints/$ENDPOINT_ID/docker/services" | \
-          jq -r '.[] | select(.Spec.Labels."com.docker.compose.project" == "'$STACK_NAME'") | "\(.Spec.Name): \(.ServiceStatus.RunningTasks)/\(.Spec.Mode.Replicated.Replicas)"' 2>/dev/null || echo "Service status unavailable")
-        
-        if [ "$SERVICES" != "Service status unavailable" ]; then
-          echo "📋 Services:"
-          echo "$SERVICES"
-        fi
 
     - name: Deployment Summary
       if: always()
@@ -208,13 +260,28 @@ jobs:
         if [ "${{ job.status }}" = "success" ]; then
           echo "✅ **Status**: Deployment successful" >> $GITHUB_STEP_SUMMARY
           echo "🔗 **Portainer**: [View Stack](https://portainer.sankalpnarula.com)" >> $GITHUB_STEP_SUMMARY
-          echo "📦 **Backend Image**: \`ghcr.io/${{ github.repository }}:latest\`" >> $GITHUB_STEP_SUMMARY
-          echo "📦 **Frontend Image**: \`ghcr.io/${{ github.repository }}-frontend:latest\`" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ needs.check-changes.outputs.backend-changed }}" = "true" ]; then
+            echo "📦 **Backend Image**: \`ghcr.io/${{ github.repository }}:latest\` (updated)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "📦 **Backend Image**: \`ghcr.io/${{ github.repository }}:latest\` (unchanged)" >> $GITHUB_STEP_SUMMARY
+          fi
+          if [ "${{ needs.check-changes.outputs.frontend-changed }}" = "true" ]; then
+            echo "📦 **Frontend Image**: \`ghcr.io/${{ github.repository }}-frontend:latest\` (updated)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "📦 **Frontend Image**: \`ghcr.io/${{ github.repository }}-frontend:latest\` (unchanged)" >> $GITHUB_STEP_SUMMARY
+          fi
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Deployment included:**" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Pull latest images from GHCR" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Recreate containers with new images" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Prune old unused images" >> $GITHUB_STEP_SUMMARY
+          echo "**What was deployed:**" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ needs.check-changes.outputs.backend-changed }}" = "true" ]; then
+            echo "- ✅ Backend: Built and deployed new image" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- ⏭️ Backend: No changes, using existing image" >> $GITHUB_STEP_SUMMARY
+          fi
+          if [ "${{ needs.check-changes.outputs.frontend-changed }}" = "true" ]; then
+            echo "- ✅ Frontend: Built and deployed new image" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- ⏭️ Frontend: No changes, using existing image" >> $GITHUB_STEP_SUMMARY
+          fi
         else
           echo "❌ **Status**: Deployment failed" >> $GITHUB_STEP_SUMMARY
           echo "🔍 **Check**: Review job logs for details" >> $GITHUB_STEP_SUMMARY

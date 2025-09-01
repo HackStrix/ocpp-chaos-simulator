@@ -1,9 +1,6 @@
 # Multi-stage Dockerfile for OCPP Chaos Simulator Backend
 FROM golang:1.21 AS builder
 
-# Install build dependencies
-RUN apt-get update && apt-get install -y gcc libc6-dev libsqlite3-dev build-essential
-
 WORKDIR /app
 
 # Copy go mod files first for better caching
@@ -13,37 +10,35 @@ RUN go mod download && go mod verify
 # Copy source code
 COPY . .
 
-# Build both applications with optimizations
-RUN CGO_ENABLED=1 GOOS=linux go build -ldflags="-w -s" -a -installsuffix cgo -o simulator ./cmd/simulator
-RUN CGO_ENABLED=1 GOOS=linux go build -ldflags="-w -s" -a -installsuffix cgo -o test-charger ./cmd/test-charger
+# Build pure-Go binaries (no CGO needed!)
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=cache,target=/go/pkg/mod \
+    CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o simulator ./cmd/simulator
 
-FROM debian:bookworm-slim
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=cache,target=/go/pkg/mod \
+    CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o test-charger ./cmd/test-charger
+
+# Create data directory with proper permissions
+RUN mkdir -p /app/data && chmod 755 /app/data
+
+# Use distroless for minimal, secure image
+FROM gcr.io/distroless/static-debian12:nonroot
 
 # Add labels for better container management
 LABEL org.opencontainers.image.source="https://github.com/HackStrix/ocpp-chaos-simulator"
 LABEL org.opencontainers.image.description="OCPP Chaos Simulator Backend"
 LABEL org.opencontainers.image.licenses="MIT"
 
-# Install runtime dependencies and create non-root user
-RUN apt-get update && apt-get install -y ca-certificates sqlite3 tzdata && \
-    groupadd -g 1001 appgroup && \
-    useradd -u 1001 -g appgroup -s /bin/sh appuser && \
-    apt-get clean && rm -rf /var/lib/apt/lists/*
-
 WORKDIR /app
 
 # Copy binaries and configs
-COPY --from=builder --chown=appuser:appgroup /app/simulator /app/test-charger ./
-COPY --from=builder --chown=appuser:appgroup /app/configs ./configs
+COPY --from=builder --chown=nonroot:nonroot /app/simulator /app/test-charger ./
+COPY --from=builder --chown=nonroot:nonroot /app/configs ./configs
 
-# Create data directory with proper permissions
-RUN mkdir -p ./data && chown -R appuser:appgroup ./data
-
-USER appuser
+# Copy data directory with proper ownership
+COPY --from=builder --chown=nonroot:nonroot /app/data ./data
 
 EXPOSE 8080
-
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1
 
 CMD ["./simulator"]

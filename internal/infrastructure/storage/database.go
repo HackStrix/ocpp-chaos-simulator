@@ -1,7 +1,7 @@
 package storage
 
 import (
-	"gorm.io/driver/sqlite"
+	"github.com/glebarez/sqlite" // Pure-Go SQLite driver
 	"gorm.io/gorm"
 )
 
@@ -41,12 +41,20 @@ func (s *SQLiteDB) GetDB() *gorm.DB {
 
 // Close closes the database connection
 func (s *SQLiteDB) Close() error {
-	// TODO: Implement database connection closing
-	return nil
+	sqlDB, err := s.db.DB()
+	if err != nil {
+		return err
+	}
+	return sqlDB.Close()
 }
 
 // Migrate runs database migrations
 func (s *SQLiteDB) Migrate() error {
-	// TODO: Implement auto-migration for all models
-	return nil
+	// Auto-migrate all models
+	return s.db.AutoMigrate(
+		&Simulation{},
+		&Charger{},
+		&OCPPMessage{},
+		&Event{},
+	)
 }
