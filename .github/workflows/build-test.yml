@@ -88,11 +88,6 @@ jobs:
     name: Integration Tests
     runs-on: [self-hosted, home]
     needs: [test-backend, test-frontend]
-    
-    services:
-      docker:
-        image: docker:24-dind
-        options: --privileged
 
     steps:
     - name: Checkout code
@@ -102,20 +97,10 @@ jobs:
       uses: actions/setup-go@v5
       with:
         go-version: '1.21'
+        cache: true
 
-    - name: Build Docker image for testing
-      run: |
-        docker build -f deployments/Dockerfile -t ocpp-simulator:test .
+    - name: Install dependencies
+      run: go mod download
 
     - name: Run integration tests
-      run: |
-        # Start the service in background
-        docker run -d --name simulator-test -p 8080:8080 ocpp-simulator:test
-        sleep 10
-        
-        # Run integration tests
-        go test -v ./tests/...
-        
-        # Cleanup
-        docker stop simulator-test
-        docker rm simulator-test
+      run: go test -v ./tests/...
