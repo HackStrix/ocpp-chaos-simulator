@@ -8,6 +8,7 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
+  PORTAINER_WEBHOOK_URL: ${{ secrets.PORTAINER_WEBHOOK_URL }}
 
 jobs:
   check-changes:
@@ -165,92 +166,49 @@ jobs:
     - name: Verify Portainer Connection
       run: |
         echo "🔍 Verifying connection to Portainer..."
-        
-        # Test connection to Portainer
-        for i in {1..5}; do
-          if curl -f -s --connect-timeout 10 https://portainer.sankalpnarula.com/api/status > /dev/null; then
-            echo "✅ Successfully connected to Portainer"
-            break
-          fi
-          echo "⏳ Attempt $i/5 - Waiting for Portainer connection..."
-          sleep 3
-        done
-        
-        # Final connection test
-        if ! curl -f -s --connect-timeout 10 https://portainer.sankalpnarula.com/api/status > /dev/null; then
+        if curl -f -s --connect-timeout 10 https://portainer.sankalpnarula.com/api/status > /dev/null; then
+          echo "✅ Successfully connected to Portainer"
+        else
           echo "❌ Failed to connect to Portainer"
           exit 1
         fi
 
     - name: Trigger Portainer Stack Redeployment
       env:
-        PORTAINER_URL: https://portainer.sankalpnarula.com
-        PORTAINER_TOKEN: ${{ secrets.PORTAINER_ACCESS_TOKEN }}
-        STACK_NAME: ocpp-chaos-sim
+        PORTAINER_WEBHOOK_URL: ${{ secrets.PORTAINER_WEBHOOK_URL }}
         BACKEND_CHANGED: ${{ needs.check-changes.outputs.backend-changed }}
         FRONTEND_CHANGED: ${{ needs.check-changes.outputs.frontend-changed }}
       run: |
-        set -e
-        
         echo "🚀 Starting deployment process..."
-        echo "Backend changed: $BACKEND_CHANGED"
-        echo "Frontend changed: $FRONTEND_CHANGED"
+        echo "📋 Backend changed: $BACKEND_CHANGED"
+        echo "📋 Frontend changed: $FRONTEND_CHANGED"
         
-        # Get stack ID
-        echo "🔍 Looking for stack: $STACK_NAME"
-        STACK_ID=$(curl -s -H "X-API-Key: $PORTAINER_TOKEN" \
-          "$PORTAINER_URL/api/stacks" | \
-          jq -r ".[] | select(.Name == \"$STACK_NAME\") | .Id")
+        # Trigger redeployment via webhook
+        echo "🔄 Triggering stack redeployment via webhook..."
         
-        if [ "$STACK_ID" = "null" ] || [ -z "$STACK_ID" ]; then
-          echo "❌ Stack '$STACK_NAME' not found. Available stacks:"
-          curl -s -H "X-API-Key: $PORTAINER_TOKEN" \
-            "$PORTAINER_URL/api/stacks" | jq -r '.[].Name'
-          exit 1
-        fi
-        
-        echo "📋 Found stack ID: $STACK_ID"
-        
-        # Get endpoint ID
-        ENDPOINT_ID=$(curl -s -H "X-API-Key: $PORTAINER_TOKEN" \
-          "$PORTAINER_URL/api/stacks/$STACK_ID" | \
-          jq -r '.EndpointId')
-        
-        echo "🎯 Using endpoint ID: $ENDPOINT_ID"
-        
-        # Trigger stack update (always pull images, even if only one service changed)
-        echo "🔄 Triggering stack redeployment with image pull..."
-        RESPONSE=$(curl -s -w "%{http_code}" -X PUT \
-          -H "X-API-Key: $PORTAINER_TOKEN" \
+        RESPONSE=$(curl -s -w "%{http_code}" -X POST \
           -H "Content-Type: application/json" \
-          -d '{
-            "pullImage": true,
-            "prune": true
-          }' \
-          "$PORTAINER_URL/api/stacks/$STACK_ID?endpointId=$ENDPOINT_ID")
+          -d '{"pullImage": true}' \
+          "$PORTAINER_WEBHOOK_URL")
         
         HTTP_CODE="${RESPONSE: -3}"
         RESPONSE_BODY="${RESPONSE%???}"
         
-        if [ "$HTTP_CODE" = "200" ]; then
-          echo "✅ Stack redeployment triggered successfully!"
-          echo "📝 Response: $RESPONSE_BODY"
-        else
-          echo "❌ Deployment failed with HTTP $HTTP_CODE"
-          echo "📝 Response: $RESPONSE_BODY"
-          exit 1
-        fi
+        case $HTTP_CODE in
+          200|204)
+            echo "✅ Stack redeployment triggered successfully!"
+            [ -n "$RESPONSE_BODY" ] && echo "📝 Response: $RESPONSE_BODY"
+            ;;
+          *)
+            echo "❌ Deployment webhook failed with HTTP $HTTP_CODE"
+            echo "📝 Response: $RESPONSE_BODY"
+            echo "🔗 Check Portainer for more details"
+            exit 1
+            ;;
+        esac
         
-        # Wait for deployment to process
-        echo "⏳ Waiting for deployment to complete..."
-        sleep 15
-        
-        # Check deployment status
-        STACK_STATUS=$(curl -s -H "X-API-Key: $PORTAINER_TOKEN" \
-          "$PORTAINER_URL/api/stacks/$STACK_ID" | \
-          jq -r '.Status // "unknown"')
-        
-        echo "📊 Stack status: $STACK_STATUS"
+        echo "⏳ Deployment initiated via webhook - check Portainer for progress"
+        echo "🔗 Monitor at: https://portainer.sankalpnarula.com"
 
     - name: Deployment Summary
       if: always()
