@@ -13,8 +13,7 @@ enabled = true
 
 
 # Worker configuration
-[env.production]
-compatibility_flags = ["nodejs_compat"]
+compatibility_flags = ["nodejs_compat", "streams_enable_constructors"]
 
 # Environment variables
 [env.production.vars]
