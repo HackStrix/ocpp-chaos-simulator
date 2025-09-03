@@ -19,6 +19,11 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg/mod \
     CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o test-charger ./cmd/test-charger
 
+# Use alpine for directory setup, then copy to distroless
+FROM alpine:latest AS setup
+RUN addgroup -g 65532 -S nonroot && adduser -u 65532 -S nonroot -G nonroot
+RUN mkdir -p /app/data && chown -R nonroot:nonroot /app/data && chmod 755 /app/data
+
 # Use distroless for minimal, secure image
 FROM gcr.io/distroless/static-debian12:nonroot
 
@@ -28,6 +33,9 @@ LABEL org.opencontainers.image.description="OCPP Chaos Simulator Backend"
 LABEL org.opencontainers.image.licenses="MIT"
 
 WORKDIR /app
+
+# Copy pre-setup data directory with correct ownership
+COPY --from=setup --chown=nonroot:nonroot /app/data ./data
 
 # Copy binaries and configs
 COPY --from=builder --chown=nonroot:nonroot /app/simulator /app/test-charger ./
