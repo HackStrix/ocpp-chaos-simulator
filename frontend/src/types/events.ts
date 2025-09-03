@@ -4,6 +4,17 @@ export interface EventBase {
   timestamp: number;
 }
 
+// Flexible event type that can handle any event from the backend
+export interface RealTimeEvent extends EventBase {
+  type: string; // Accept any string type from backend
+  data: {
+    entity_id?: number;
+    level?: EventLevel;
+    [key: string]: any;
+  };
+}
+
+// Specific event types for type safety where needed
 export interface ChargerEvent extends EventBase {
   type: 
     | 'charger.boot_notification.sent'
@@ -53,8 +64,6 @@ export interface ChaosEvent extends EventBase {
     description: string;
   };
 }
-
-export type RealTimeEvent = ChargerEvent | SimulationEvent | OCPPMessageEvent | ChaosEvent;
 
 // WebSocket message format from backend
 export interface WebSocketMessage {

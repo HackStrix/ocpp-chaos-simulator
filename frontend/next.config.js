@@ -8,6 +8,10 @@ const nextConfig = {
   async rewrites() {
     return [
       {
+        source: '/health',
+        destination: 'http://localhost:8080/health', // Health check endpoint
+      },
+      {
         source: '/api/:path*',
         destination: 'http://localhost:8080/api/:path*', // Go backend
       },
