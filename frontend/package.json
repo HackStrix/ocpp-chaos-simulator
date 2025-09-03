@@ -5,10 +5,14 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "build:cloudflare": "next build && npx @cloudflare/next-on-pages",
+    "preview": "npm run build:cloudflare && wrangler pages dev .vercel/output/static",
+    "deploy": "npm run build:cloudflare && wrangler deploy",
     "start": "next start",
     "lint": "next lint"
   },
   "dependencies": {
+    "@cloudflare/next-on-pages": "^1.13.15",
     "@tanstack/react-query": "^5.85.9",
     "@tanstack/react-query-devtools": "^5.85.9",
     "class-variance-authority": "^0.7.1",

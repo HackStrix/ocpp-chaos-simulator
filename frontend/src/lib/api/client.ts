@@ -25,7 +25,7 @@ export class APIClientError extends Error {
 class APIClient {
   private baseURL: string;
 
-  constructor(baseURL: string = '/api') {
+  constructor(baseURL: string = process.env.NEXT_PUBLIC_API_URL || '/api') {
     this.baseURL = baseURL;
   }
 

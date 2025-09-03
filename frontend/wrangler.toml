@@ -1,0 +1,26 @@
+#:schema node_modules/@cloudflare/workers-types/worker-configuration.d.ts
+name = "ocpp-chaos-simulator"
+main = "_worker.js"
+compatibility_date = "2024-01-15"
+
+# Build configuration
+[build]
+command = "npx @cloudflare/next-on-pages"
+
+# Worker configuration
+[env.production]
+compatibility_flags = ["nodejs_compat"]
+
+# Environment variables
+[env.production.vars]
+NODE_ENV = "production"
+
+# Custom domain configuration
+[[env.production.routes]]
+pattern = "ocpp.sankalpnarula.com/*"
+zone_name = "sankalpnarula.com"
+
+# KV namespaces (if needed for caching)
+# [[env.production.kv_namespaces]]
+# binding = "CACHE"
+# id = "your-kv-namespace-id"
