@@ -71,8 +71,7 @@ jobs:
 
     - name: Install dependencies
       run: |
-        npm cache clean --force
-        npm ci --legacy-peer-deps
+        npm ci 
 
     - name: Run linter
       run: npm run lint
