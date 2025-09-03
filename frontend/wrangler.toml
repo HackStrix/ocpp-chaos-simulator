@@ -24,7 +24,7 @@ NODE_ENV = "production"
 
 # Custom domain configuration
 [[env.production.routes]]
-pattern = ocpp.sankalpnarula.com
+pattern = "ocpp.sankalpnarula.com/*"
 zone_name = "sankalpnarula.com"
 
 # KV namespaces (if needed for caching)
