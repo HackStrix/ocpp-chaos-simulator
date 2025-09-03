@@ -1,7 +1,7 @@
 #:schema node_modules/@cloudflare/workers-types/worker-configuration.d.ts
 name = "ocpp-chaos-simulator"
-main = "_worker.js"
-compatibility_date = "2024-01-15"
+main = ".vercel/output/static/_worker.js/index.js"
+compatibility_date = "2025-08-15"
 
 # Build configuration
 [build]
