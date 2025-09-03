@@ -15,8 +15,6 @@ enabled = true
 # Worker configuration
 [env.production]
 compatibility_flags = ["nodejs_compat"]
-logpush = true  # Enable log streaming
-
 
 # Environment variables
 [env.production.vars]
